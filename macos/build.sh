@@ -23,7 +23,7 @@ cp app/Info.plist "$APP/Contents/"
 if [ -n "${VERSION:-}" ]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 fi
-cp data/stores.json "$APP/Contents/Resources/"
+cp ../data/stores.json "$APP/Contents/Resources/"
 
 # App icon: app/AppIcon.png (1024×1024) → AppIcon.icns
 ICONSET=build/AppIcon.iconset

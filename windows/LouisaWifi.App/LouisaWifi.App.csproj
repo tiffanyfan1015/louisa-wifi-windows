@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>LouisaWifi</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LouisaWifi.Windows/LouisaWifi.Windows.csproj" />
+    <EmbeddedResource Include="../../data/stores.json" Link="stores.json" />
+    <Content Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

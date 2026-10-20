@@ -1,20 +1,63 @@
-<Window x:Class="LouisaWifi.App.StorePickerWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Louisa Wi-Fi · 選擇門市" Width="680" Height="540" MinWidth="530" MinHeight="440" WindowStartupLocation="CenterScreen" Background="#FAF8F5">
-  <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <StackPanel><TextBlock Text="Louisa Wi-Fi" FontSize="26" FontWeight="SemiBold" Foreground="#704E36"/><TextBlock Margin="0,6,0,16" Text="選擇你所在的門市，連上一次後即可記住。"/></StackPanel>
-    <TextBox x:Name="Search" Grid.Row="1" Padding="9" Margin="0,0,0,12" TextChanged="SearchChanged" AutomationProperties.Name="搜尋門市名稱或地址" ToolTip="輸入門市名稱、縣市或地址"/>
-    <ListBox x:Name="StoreList" Grid.Row="2" DisplayMemberPath="Display" SelectionChanged="SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-    <StackPanel Grid.Row="3" Margin="0,14,0,0">
-      <TextBlock Text="密碼候選（可直接選擇，或自動依序嘗試）"/>
-      <ComboBox x:Name="Candidates" Margin="0,5,0,10" Padding="5"/>
-      <TextBlock Text="或輸入店內張貼的密碼（8–63 個英數／符號字元）"/>
-      <PasswordBox x:Name="Password" Margin="0,5,0,0" Padding="7" AutomationProperties.Name="店內 Wi-Fi 密碼"/>
-      <TextBlock x:Name="Status" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#555555"/>
-    </StackPanel>
-    <CheckBox x:Name="Authorized" Grid.Row="4" Margin="0,12,0,0" Content="我已獲准使用所選門市的 Wi-Fi"/>
-    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-      <Button Content="取消本次嘗試" Padding="14,7" Margin="0,0,10,0" Click="CancelClicked"/>
-      <Button x:Name="ConnectButton" Content="連線" Padding="24,7" Click="ConnectClicked" IsDefault="True"/>
-    </StackPanel>
+<Window x:Class="LouisaWifi.App.StorePickerWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Louisa Wi-Fi · 選擇門市" Width="1040" Height="780" MinWidth="920" MinHeight="740" WindowStartupLocation="CenterScreen" Background="#F5F2EE" Foreground="#302A25" FontFamily="Microsoft JhengHei UI, Segoe UI" FontSize="14" UseLayoutRounding="True">
+  <Window.Resources>
+    <SolidColorBrush x:Key="Muted" Color="#756D65"/>
+    <Style TargetType="Button">
+      <Setter Property="Background" Value="#EEE8E0"/><Setter Property="Foreground" Value="#514438"/><Setter Property="Padding" Value="20,12"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.86"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#C07A40"/><Setter TargetName="Surface" Property="BorderThickness" Value="2"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value="0.42"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="TextBox"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#DCD5CC"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="12,10"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox"><Border x:Name="Field" CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"><ScrollViewer x:Name="PART_ContentHost"/></Border><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Field" Property="BorderBrush" Value="#A56735"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <Style TargetType="PasswordBox"><Setter Property="Padding" Value="12,10"/><Setter Property="BorderBrush" Value="#DCD5CC"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="PasswordBox"><Border x:Name="Field" CornerRadius="8" Background="White" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"><ScrollViewer x:Name="PART_ContentHost"/></Border><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Field" Property="BorderBrush" Value="#A56735"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="14,12"/><Setter Property="Margin" Value="0,0,0,6"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Tile" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tile" Property="Background" Value="#F7F3ED"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Tile" Property="Background" Value="#F2E7D9"/><Setter TargetName="Tile" Property="BorderBrush" Value="#C69C73"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="#945F35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  </Window.Resources>
+  <Grid Margin="28,24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid Margin="0,0,0,24">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border Width="52" Height="52" CornerRadius="16" Background="#70482C" Margin="0,0,16,0"><TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE701;" Foreground="#FFF7EB" FontSize="25" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+      <TextBlock Grid.Column="1" Text="Louisa Wi-Fi" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+    </Grid>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="370"/></Grid.ColumnDefinitions>
+      <Border Background="White" CornerRadius="16" Padding="20" BorderBrush="#E6E0D8" BorderThickness="1">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel Margin="0,0,0,14"><TextBlock Text="尋找門市" FontSize="18" FontWeight="Bold"/><TextBlock x:Name="ResultCount" Foreground="{StaticResource Muted}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/></DockPanel>
+          <Grid Grid.Row="1"><TextBox x:Name="Search" TextChanged="SearchChanged" AutomationProperties.Name="搜尋門市名稱或地址" Padding="12,11"/><TextBlock x:Name="SearchHint" Text="輸入門市名稱、縣市或地址" Foreground="#978C80" Margin="13,0" VerticalAlignment="Center" IsHitTestVisible="False"/></Grid>
+          <Border Grid.Row="2" Height="14"/>
+          <ListBox x:Name="StoreList" Grid.Row="3" BorderThickness="0" Background="Transparent" SelectionChanged="SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="門市搜尋結果">
+            <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Address}" Foreground="{StaticResource Muted}" Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel x:Name="EmptyState" Grid.Row="3" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="找不到符合的門市" FontWeight="SemiBold" FontSize="17" HorizontalAlignment="Center"/></StackPanel>
+        </Grid>
+      </Border>
+      <Border Grid.Column="2" Background="White" CornerRadius="16" Padding="22" BorderBrush="#E6E0D8" BorderThickness="1">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+              <TextBlock x:Name="SelectedName" Text="選擇門市" FontSize="22" FontWeight="Bold" Margin="0,10,0,8" TextWrapping="Wrap"/>
+              <TextBlock x:Name="SelectedAddress" Text="" Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap"/>
+              <TextBlock x:Name="SelectedPhone" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,7,0,0"/>
+              <Border Height="1" Background="#EEE9E2" Margin="0,20,0,18"/>
+              <TextBlock Text="門市密碼" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox x:Name="Candidates" Padding="10,9" MinHeight="40" IsEnabled="False" AutomationProperties.Name="門市候選密碼"/>
+              <TextBlock Text="自訂密碼（選填）" FontWeight="SemiBold" Margin="0,20,0,8"/>
+              <PasswordBox x:Name="Password" IsEnabled="False" AutomationProperties.Name="店內 Wi-Fi 密碼" ToolTip="填寫後優先使用此密碼"/>
+            </StackPanel>
+          </ScrollViewer>
+          <StackPanel Grid.Row="1" Margin="0,18,0,0">
+            <CheckBox x:Name="Authorized" VerticalContentAlignment="Center" Margin="0,0,0,14"><TextBlock Text="我已獲准使用所選門市的 Wi-Fi" FontSize="13" TextWrapping="Wrap"/></CheckBox>
+            <Button x:Name="ConnectButton" Content="連線" Background="#754B2D" Foreground="White" Click="ConnectClicked" IsDefault="True" IsEnabled="False"/>
+            <Button x:Name="CancelButton" Content="取消連線" Background="Transparent" FontSize="12" Padding="12,8" Margin="0,4,0,0" Click="CancelClicked" IsEnabled="False"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="#EBE6DE" CornerRadius="12" Padding="16,12" Margin="0,18,0,0">
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Ellipse Width="8" Height="8" Fill="#927250" VerticalAlignment="Top" Margin="0,5,12,0"/>
+        <TextBlock Grid.Column="1" x:Name="Status" TextWrapping="Wrap" FontSize="13" Foreground="#635B53" AutomationProperties.Name="連線狀態"/>
+      </Grid>
+    </Border>
   </Grid>
 </Window>

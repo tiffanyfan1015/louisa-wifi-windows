@@ -17,6 +17,7 @@ public sealed class TrayController : IDisposable
     private readonly ConnectionCoordinator coordinator;
     private readonly IWifiClient wifi;
     private readonly Forms.NotifyIcon icon;
+    private readonly System.Drawing.Icon trayIcon;
     private readonly Forms.ToolStripMenuItem statusItem, autoItem, locationItem, startupItem;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(60) };
     private StorePickerWindow? window;
@@ -59,7 +60,11 @@ public sealed class TrayController : IDisposable
             await coordinator.WaitForIdleAsync();
             Application.Current.Shutdown();
         });
-        icon = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "Louisa Wi-Fi", ContextMenuStrip = menu, Visible = true };
+        using (var stream = typeof(TrayController).Assembly.GetManifestResourceStream("LouisaWifi.Louisa.ico")
+            ?? throw new InvalidOperationException("Missing application icon."))
+        using (var resourceIcon = new System.Drawing.Icon(stream))
+            trayIcon = (System.Drawing.Icon)resourceIcon.Clone();
+        icon = new Forms.NotifyIcon { Icon = trayIcon, Text = "Louisa Wi-Fi", ContextMenuStrip = menu, Visible = true };
         icon.DoubleClick += (_, _) => ShowStores();
         coordinator.StatusChanged += OnStatus;
         coordinator.UseLocation = settings.UseLocation;
@@ -108,6 +113,7 @@ public sealed class TrayController : IDisposable
             }, coordinator.Cancel);
             window.Closed += (_, _) => window = null;
         }
+        window.SetStatus(coordinator.Status);
         window.Show(); window.Activate();
     }
     private static void Open(string uri)
@@ -120,5 +126,6 @@ public sealed class TrayController : IDisposable
         exiting = true; timer.Stop(); wifi.Changed -= WifiChanged;
         coordinator.StatusChanged -= OnStatus; coordinator.Cancel();
         icon.Visible = false; icon.ContextMenuStrip?.Dispose(); icon.Dispose();
+        trayIcon.Dispose();
     }
 }

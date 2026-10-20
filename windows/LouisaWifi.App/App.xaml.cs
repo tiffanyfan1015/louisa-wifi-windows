@@ -37,7 +37,7 @@ public partial class App : Application
             wifi = new WlanClient();
             var coordinator = new ConnectionCoordinator(wifi, learned, stores, location, new ConnectivityMonitor());
             tray = new TrayController(stores, settings, location, coordinator, wifi);
-            if (!settings.Authorized && !e.Args.Contains("--background")) tray.ShowStores();
+            if (!e.Args.Contains("--background")) tray.ShowStores();
         }
         catch (Exception ex)
         {
@@ -57,16 +57,26 @@ public partial class App : Application
             var view = new StorePickerWindow(stores, false, (_, _) => System.Threading.Tasks.Task.CompletedTask, () => { });
             view.PreparePreview();
             var content = (FrameworkElement)view.Content;
-            content.Measure(new Size(680, 540));
-            content.Arrange(new Rect(0, 0, 680, 540));
-            content.UpdateLayout();
-            var bitmap = new RenderTargetBitmap(680, 540, 96, 96, PixelFormats.Pbgra32);
-            var background = new DrawingVisual();
-            using (var dc = background.RenderOpen()) dc.DrawRectangle(view.Background, null, new Rect(0, 0, 680, 540));
-            bitmap.Render(background);
-            bitmap.Render(content);
-            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
-            using (var output = File.Create(Path.Combine(outputDirectory, "window.png"))) png.Save(output);
+            void Render(string name, int width, int height)
+            {
+                content.Measure(new Size(width, height));
+                content.Arrange(new Rect(0, 0, width, height));
+                content.UpdateLayout();
+                var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+                var background = new DrawingVisual();
+                using (var dc = background.RenderOpen()) dc.DrawRectangle(view.Background, null, new Rect(0, 0, width, height));
+                bitmap.Render(background);
+                bitmap.Render(content);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var output = File.Create(Path.Combine(outputDirectory, name));
+                png.Save(output);
+            }
+            Render("window.png", 1024, 740);
+            Render("window-small.png", 904, 700);
+            view.Search.Text = "__no_matching_store__";
+            if (view.StoreList.Items.Count != 0 || view.ConnectButton.IsEnabled)
+                throw new InvalidOperationException("Empty search should clear selection and disable connect.");
+            Render("window-empty.png", 904, 700);
             File.WriteAllText(Path.Combine(outputDirectory, "smoke.txt"), $"PASS: WPF window initialized and rendered; {stores.All.Count} embedded stores loaded. No WLAN calls or user settings changed.");
             Shutdown(0);
         }

@@ -10,4 +10,4 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
-      - run: ./build.sh
+      - run: bash macos/build.sh

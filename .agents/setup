@@ -31,10 +31,10 @@ from pathlib import Path
 
 ast.parse(Path("scripts/fetch_stores.py").read_text(encoding="utf-8"))
 json.loads(Path("data/stores.json").read_text(encoding="utf-8"))
-with Path("app/Info.plist").open("rb") as file:
+with Path("macos/app/Info.plist").open("rb") as file:
     plistlib.load(file)
 assert ssl.create_default_context().get_ca_certs(), "No trusted HTTPS certificates"
 PY
-bash -n build.sh install.sh .agents/setup .agents/resume
+bash -n macos/build.sh macos/install.sh .agents/setup .agents/resume
 echo "Setup complete (${SECONDS}s). No package dependencies or services are needed."
 echo "Build and runtime checks require macOS with Xcode Command Line Tools (see CI)."

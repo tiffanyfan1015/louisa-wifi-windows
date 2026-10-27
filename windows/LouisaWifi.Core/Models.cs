@@ -7,7 +7,11 @@ public sealed record Store(string Name, string Address, string Phone, double Lat
     public string Display => $"{Name} — {Address}";
 }
 public sealed record Position(double Latitude, double Longitude, double Accuracy, DateTimeOffset Timestamp);
-public sealed record AccessPoint(Guid InterfaceId, string Ssid, string Bssid, int Signal, bool Supported);
+public enum WifiSecurity { Unsupported, Wpa2Personal, Wpa3Personal }
+public sealed record AccessPoint(Guid InterfaceId, string Ssid, string Bssid, int Signal, WifiSecurity Security)
+{
+    public bool Supported => Security is WifiSecurity.Wpa2Personal or WifiSecurity.Wpa3Personal;
+}
 public sealed record Connection(Guid InterfaceId, string Ssid, string Bssid, string Profile);
 public sealed record WifiSnapshot(bool HasAdapter, bool Busy, IReadOnlyList<Connection> Connections);
 public sealed record LearnedNetwork(string StoreName, string Password);
@@ -30,9 +34,10 @@ public interface ILocationService
 {
     Task<Position?> LocateAsync(CancellationToken token);
 }
+public enum InternetStatus { Unconfirmed, Limited, Available }
 public interface IConnectivityMonitor
 {
-    Task<string> CheckAsync(CancellationToken token);
+    Task<InternetStatus> CheckAsync(Connection connection, CancellationToken token);
 }
 
 public sealed class StoreRepository
@@ -60,11 +65,14 @@ public sealed class StoreRepository
 public static class CandidateSelector
 {
     public const string Ssid = "LouisaCoffee";
+    public static bool IsLouisaSsid(string ssid) =>
+        ssid.Contains("louisa coffee", StringComparison.OrdinalIgnoreCase)
+        || ssid.Contains(Ssid, StringComparison.OrdinalIgnoreCase);
     public static bool ValidPassword(string value) => value.Length is >= 8 and <= 63 && value.All(c => c is >= ' ' and <= '~');
     public static IReadOnlyList<Candidate> Select(IReadOnlyList<AccessPoint> networks, ILearnedStore learned,
         IEnumerable<Store> nearby, Store? selected = null, string? password = null)
     {
-        var aps = networks.Where(a => a.Ssid == Ssid && a.Supported).OrderByDescending(a => a.Signal).ToArray();
+        var aps = networks.Where(a => IsLouisaSsid(a.Ssid) && a.Supported).OrderByDescending(a => a.Signal).ToArray();
         if (aps.Length == 0) return [];
         var candidates = new List<Candidate>();
         if (password is not null && selected is not null)

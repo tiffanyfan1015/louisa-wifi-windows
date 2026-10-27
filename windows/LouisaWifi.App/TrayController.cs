@@ -30,11 +30,10 @@ public sealed class TrayController : IDisposable
         statusItem = new Forms.ToolStripMenuItem("準備就緒") { Enabled = false };
         menu.Items.Add(statusItem);
         menu.Items.Add("選擇門市／輸入密碼…", null, (_, _) => ShowStores());
-        menu.Items.Add("立即檢查", null, async (_, _) => await Guard(async () => { if (Authorize()) await coordinator.CheckAsync(true); }));
-        autoItem = new Forms.ToolStripMenuItem("啟用自動連線") { Checked = settings.AutoConnect && settings.Authorized };
+        menu.Items.Add("立即檢查", null, async (_, _) => await Guard(() => coordinator.CheckAsync(true)));
+        autoItem = new Forms.ToolStripMenuItem("啟用自動連線") { Checked = settings.AutoConnect };
         autoItem.Click += async (_, _) => await Guard(async () => {
             var enabled = !autoItem.Checked;
-            if (enabled && !Authorize()) return;
             settings.AutoConnect = enabled; settings.Save(); autoItem.Checked = enabled;
             coordinator.SetEnabled(enabled);
             if (enabled) await coordinator.CheckAsync();
@@ -79,12 +78,6 @@ public sealed class TrayController : IDisposable
         try { await action(); }
         catch (Exception ex) { OnStatus($"設定操作失敗（{ex.GetType().Name}）"); }
     }
-    private bool Authorize()
-    {
-        if (settings.Authorized) return true;
-        if (MessageBox.Show("只會嘗試 LouisaCoffee。請確認你已獲准使用門市 Wi-Fi。\nWindows 可能要求定位權限以掃描 Wi-Fi。", "啟用 Louisa Wi-Fi", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return false;
-        settings.Authorized = true; settings.Save(); return true;
-    }
     private void WifiChanged() => Application.Current.Dispatcher.BeginInvoke(async () => {
         if (exiting || DateTimeOffset.UtcNow - lastEvent < TimeSpan.FromSeconds(15)) return;
         lastEvent = DateTimeOffset.UtcNow;
@@ -107,8 +100,7 @@ public sealed class TrayController : IDisposable
     {
         if (window is null)
         {
-            window = new StorePickerWindow(stores, settings.Authorized, async (store, password) => {
-                settings.Authorized = true; settings.Save();
+            window = new StorePickerWindow(stores, async (store, password) => {
                 await coordinator.CheckAsync(true, store, password);
             }, coordinator.Cancel);
             window.Closed += (_, _) => window = null;

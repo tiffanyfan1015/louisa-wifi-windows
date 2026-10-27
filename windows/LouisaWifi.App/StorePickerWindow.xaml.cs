@@ -13,11 +13,10 @@ public partial class StorePickerWindow : Window
     private readonly Func<Store, string?, Task> connect;
     private readonly Action cancel;
     private bool connecting;
-    public StorePickerWindow(StoreRepository stores, bool authorized, Func<Store, string?, Task> connect, Action cancel)
+    public StorePickerWindow(StoreRepository stores, Func<Store, string?, Task> connect, Action cancel)
     {
         this.stores = stores; this.connect = connect; this.cancel = cancel;
         InitializeComponent();
-        Authorized.IsChecked = authorized;
         StoreList.ItemsSource = stores.All;
         ResultCount.Text = $"{stores.All.Count} 家門市";
         Candidates.ItemsSource = new[] { "自動依序嘗試" };
@@ -26,7 +25,7 @@ public partial class StorePickerWindow : Window
     }
     public void SetStatus(string status)
     {
-        Status.Text = status;
+        if (Status.Text != status) Status.Text = status;
         CancelButton.IsEnabled = connecting || status.StartsWith("正在掃描") || status.StartsWith("正在連線");
     }
     internal void PreparePreview()
@@ -61,7 +60,6 @@ public partial class StorePickerWindow : Window
     private async void ConnectClicked(object sender, RoutedEventArgs e)
     {
         if (StoreList.SelectedItem is not Store store) { Status.Text = "請先選擇門市"; return; }
-        if (Authorized.IsChecked != true) { Status.Text = "請先確認已獲准使用門市 Wi-Fi"; return; }
         string? password = Password.Password.Length > 0 ? Password.Password
             : Candidates.SelectedIndex > 0 ? Candidates.SelectedItem as string : null;
         if (password is not null && !CandidateSelector.ValidPassword(password)) { Status.Text = "密碼需為 8–63 個英數／符號字元"; return; }

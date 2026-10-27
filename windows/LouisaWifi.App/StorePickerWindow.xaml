@@ -8,6 +8,9 @@
     <Style TargetType="TextBox"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#DCD5CC"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="12,10"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox"><Border x:Name="Field" CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"><ScrollViewer x:Name="PART_ContentHost"/></Border><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Field" Property="BorderBrush" Value="#A56735"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <Style TargetType="PasswordBox"><Setter Property="Padding" Value="12,10"/><Setter Property="BorderBrush" Value="#DCD5CC"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="PasswordBox"><Border x:Name="Field" CornerRadius="8" Background="White" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"><ScrollViewer x:Name="PART_ContentHost"/></Border><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Field" Property="BorderBrush" Value="#A56735"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="14,12"/><Setter Property="Margin" Value="0,0,0,6"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Tile" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tile" Property="Background" Value="#F7F3ED"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Tile" Property="Background" Value="#F2E7D9"/><Setter TargetName="Tile" Property="BorderBrush" Value="#C69C73"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="#945F35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    <Style x:Key="CopyableText" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+      <Setter Property="IsReadOnly" Value="True"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/><Setter Property="IsReadOnlyCaretVisible" Value="False"/>
+    </Style>
   </Window.Resources>
   <Grid Margin="28,24">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -35,18 +38,17 @@
           <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
-              <TextBlock x:Name="SelectedName" Text="選擇門市" FontSize="22" FontWeight="Bold" Margin="0,10,0,8" TextWrapping="Wrap"/>
-              <TextBlock x:Name="SelectedAddress" Text="" Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap"/>
-              <TextBlock x:Name="SelectedPhone" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,7,0,0"/>
+              <TextBox Style="{StaticResource CopyableText}" x:Name="SelectedName" Text="選擇門市" FontSize="22" FontWeight="Bold" Margin="0,10,0,8" TextWrapping="Wrap"/>
+              <TextBox Style="{StaticResource CopyableText}" x:Name="SelectedAddress" Text="" Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap"/>
+              <TextBox Style="{StaticResource CopyableText}" x:Name="SelectedPhone" Foreground="{StaticResource Muted}" FontSize="13" Margin="0,7,0,0"/>
               <Border Height="1" Background="#EEE9E2" Margin="0,20,0,18"/>
               <TextBlock Text="門市密碼" FontWeight="SemiBold" Margin="0,0,0,8"/>
-              <ComboBox x:Name="Candidates" Padding="10,9" MinHeight="40" IsEnabled="False" AutomationProperties.Name="門市候選密碼"/>
+              <ComboBox x:Name="Candidates" IsEditable="True" IsReadOnly="True" Padding="10,9" MinHeight="40" IsEnabled="False" AutomationProperties.Name="門市候選密碼"/>
               <TextBlock Text="自訂密碼（選填）" FontWeight="SemiBold" Margin="0,20,0,8"/>
               <PasswordBox x:Name="Password" IsEnabled="False" AutomationProperties.Name="店內 Wi-Fi 密碼" ToolTip="填寫後優先使用此密碼"/>
             </StackPanel>
           </ScrollViewer>
           <StackPanel Grid.Row="1" Margin="0,18,0,0">
-            <CheckBox x:Name="Authorized" VerticalContentAlignment="Center" Margin="0,0,0,14"><TextBlock Text="我已獲准使用所選門市的 Wi-Fi" FontSize="13" TextWrapping="Wrap"/></CheckBox>
             <Button x:Name="ConnectButton" Content="連線" Background="#754B2D" Foreground="White" Click="ConnectClicked" IsDefault="True" IsEnabled="False"/>
             <Button x:Name="CancelButton" Content="取消連線" Background="Transparent" FontSize="12" Padding="12,8" Margin="0,4,0,0" Click="CancelClicked" IsEnabled="False"/>
           </StackPanel>
@@ -56,7 +58,7 @@
     <Border Grid.Row="2" Background="#EBE6DE" CornerRadius="12" Padding="16,12" Margin="0,18,0,0">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Ellipse Width="8" Height="8" Fill="#927250" VerticalAlignment="Top" Margin="0,5,12,0"/>
-        <TextBlock Grid.Column="1" x:Name="Status" TextWrapping="Wrap" FontSize="13" Foreground="#635B53" AutomationProperties.Name="連線狀態"/>
+        <TextBox Style="{StaticResource CopyableText}" Grid.Column="1" x:Name="Status" TextWrapping="Wrap" FontSize="13" Foreground="#635B53" AutomationProperties.Name="連線狀態"/>
       </Grid>
     </Border>
   </Grid>

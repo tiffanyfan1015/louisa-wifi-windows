@@ -54,8 +54,16 @@ public partial class App : Application
             var assembly = Assembly.GetExecutingAssembly();
             using var stream = assembly.GetManifestResourceStream(assembly.GetManifestResourceNames().Single(n => n.EndsWith("stores.json")))!;
             var stores = new StoreRepository(stream);
-            var view = new StorePickerWindow(stores, false, (_, _) => System.Threading.Tasks.Task.CompletedTask, () => { });
+            var view = new StorePickerWindow(stores, (_, _) => System.Threading.Tasks.Task.CompletedTask, () => { });
             view.PreparePreview();
+            foreach (var field in new[] { view.Status, view.SelectedName, view.SelectedAddress, view.SelectedPhone })
+            {
+                field.SelectAll();
+                if (!field.IsReadOnly || field.SelectedText != field.Text
+                    || !System.Windows.Input.ApplicationCommands.Copy.CanExecute(null, field))
+                    throw new InvalidOperationException("Display text should be selectable and copyable.");
+                field.Select(0, 0);
+            }
             var content = (FrameworkElement)view.Content;
             void Render(string name, int width, int height)
             {

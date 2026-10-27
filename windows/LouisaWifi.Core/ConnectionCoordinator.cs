@@ -40,17 +40,17 @@ public sealed class ConnectionCoordinator(IWifiClient wifi, ILearnedStore learne
             if (!state.HasAdapter) { Report("找不到無線網卡，請確認 Wi-Fi 與 WLAN AutoConfig 服務"); return; }
             if (state.Connections.Count > 0)
             {
-                if (state.Connections.FirstOrDefault(c => c.Ssid == CandidateSelector.Ssid) is { } current)
-                    Report($"Wi-Fi 已連線：{learned.Find(current.Bssid)?.StoreName ?? "LouisaCoffee"}；{await connectivity.CheckAsync(token)}");
+                if (state.Connections.FirstOrDefault(c => CandidateSelector.IsLouisaSsid(c.Ssid)) is { } current)
+                    await ConfirmInternetAsync(current, learned.Find(current.Bssid)?.StoreName ?? current.Ssid, token);
                 else Report("保留現有 Wi-Fi 連線；如需切換請先自行中斷");
                 return;
             }
             if (state.Busy) { Report("Windows 正在處理 Wi-Fi 連線，稍後再檢查"); return; }
             Report("正在掃描 LouisaCoffee…");
             var aps = await wifi.ScanAsync(token);
-            var targets = aps.Where(a => a.Ssid == CandidateSelector.Ssid).ToArray();
+            var targets = aps.Where(a => CandidateSelector.IsLouisaSsid(a.Ssid)).ToArray();
             if (targets.Length == 0) { Report("附近沒有 LouisaCoffee，或 Wi-Fi 尚未開啟"); return; }
-            if (!targets.Any(a => a.Supported)) { Report("此網路安全性不支援；目前支援 WPA2-Personal / AES"); return; }
+            if (!targets.Any(a => a.Supported)) { Report("此網路安全性不支援或 Windows 回報無法連線；支援 WPA2/WPA3-Personal（AES）"); return; }
             if (!manual && targets.All(a => cooldown.TryGetValue(a.Bssid, out var until) && until > time.GetUtcNow()))
             { Report("連線嘗試已冷卻，稍後再檢查；也可手動選店重試"); return; }
             var eligible = manual ? targets : targets.Where(a => !cooldown.TryGetValue(a.Bssid, out var until) || until <= time.GetUtcNow()).ToArray();
@@ -79,11 +79,11 @@ public sealed class ConnectionCoordinator(IWifiClient wifi, ILearnedStore learne
                 token.ThrowIfCancellationRequested();
                 if (result.Connection is { } connected)
                 {
-                    if (connected.Ssid != CandidateSelector.Ssid || !connected.Bssid.Equals(attempt.Target.Bssid, StringComparison.OrdinalIgnoreCase))
+                    if (connected.Ssid != attempt.Target.Ssid || !connected.Bssid.Equals(attempt.Target.Bssid, StringComparison.OrdinalIgnoreCase))
                     { Report("基地台已變更，未儲存門市記錄"); return; }
                     learned.Remember(connected.Bssid, new(attempt.StoreName, attempt.Password));
                     cooldown.Remove(connected.Bssid);
-                    Report($"Wi-Fi 已連線：{attempt.StoreName}；{await connectivity.CheckAsync(token)}");
+                    await ConfirmInternetAsync(connected, attempt.StoreName, token);
                     return;
                 }
                 lastError = result.Error;
@@ -97,6 +97,21 @@ public sealed class ConnectionCoordinator(IWifiClient wifi, ILearnedStore learne
         catch (System.ComponentModel.Win32Exception ex) { Report($"Windows Wi-Fi API 失敗（代碼 {ex.NativeErrorCode}），請確認無線網卡與 WLAN AutoConfig 服務"); }
         catch (Exception ex) { Report($"操作失敗（{ex.GetType().Name}），請確認網卡、權限與資料檔案"); }
         finally { active = null; gate.Release(); }
+    }
+    private async Task ConfirmInternetAsync(Connection connection, string name, CancellationToken token)
+    {
+        Report($"正在連線：{name}（確認網際網路中…）");
+        var status = await connectivity.CheckAsync(connection, token);
+        token.ThrowIfCancellationRequested();
+        if (!wifi.Snapshot().Connections.Any(c => c.InterfaceId == connection.InterfaceId
+            && c.Ssid == connection.Ssid && c.Bssid.Equals(connection.Bssid, StringComparison.OrdinalIgnoreCase)))
+        { Report("連線已中斷或已切換，未確認上網狀態"); return; }
+        Report(status switch
+        {
+            InternetStatus.Available => $"Wi-Fi 已連線：{name}；可上網",
+            InternetStatus.Limited => $"網路受限：{name}；可能需要開啟瀏覽器登入",
+            _ => $"尚未確認可上網：{name}；請稍後重試或檢查門市網路"
+        });
     }
     private void Cool(IEnumerable<AccessPoint> aps)
     {

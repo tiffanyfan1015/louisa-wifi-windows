@@ -8,7 +8,7 @@ public sealed class WlanClient : IWifiClient, IDisposable
 {
     private IntPtr handle;
     private readonly Callback callback;
-    private event Action<Guid, uint, string, uint>? NotificationReceived;
+    private event Action<Guid, uint, string, uint, uint>? NotificationReceived;
     public event Action? Changed;
     public WlanClient()
     {
@@ -25,12 +25,14 @@ public sealed class WlanClient : IWifiClient, IDisposable
             if (n.Source != 8) return;
             string profile = "";
             uint reason = 0;
+            uint mode = uint.MaxValue;
             if (n.Code is 9 or 10 or 11 or 20 or 21 && n.Data != IntPtr.Zero && n.Size >= 564)
             {
                 profile = Marshal.PtrToStringUni(n.Data + 4, 256)?.TrimEnd('\0') ?? "";
+                mode = unchecked((uint)Marshal.ReadInt32(n.Data));
                 reason = unchecked((uint)Marshal.ReadInt32(n.Data, 560));
             }
-            NotificationReceived?.Invoke(n.InterfaceId, n.Code, profile, reason);
+            NotificationReceived?.Invoke(n.InterfaceId, n.Code, profile, reason, mode);
             if (n.Code is 10 or 13 or 14 or 21)
                 ThreadPool.QueueUserWorkItem(_ => { try { Changed?.Invoke(); } catch { /* Observer must not terminate process. */ } });
         }
@@ -82,7 +84,7 @@ public sealed class WlanClient : IWifiClient, IDisposable
             token.ThrowIfCancellationRequested();
             var id = info.Id;
             var done = new TaskCompletionSource<uint>(TaskCreationOptions.RunContinuationsAsynchronously);
-            void Scanned(Guid adapter, uint code, string profile, uint reason)
+            void Scanned(Guid adapter, uint code, string profile, uint reason, uint mode)
             { if (adapter == id && code is 7 or 8) done.TrySetResult(code); }
             NotificationReceived += Scanned;
             try
@@ -91,9 +93,11 @@ public sealed class WlanClient : IWifiClient, IDisposable
                 var status = await done.Task.WaitAsync(TimeSpan.FromSeconds(12), token);
                 if (status == 8) continue;
                 Check(WlanGetAvailableNetworkList(handle, ref id, 0, IntPtr.Zero, out var availablePtr));
-                HashSet<string> supported;
-                try { supported = ReadList<AvailableNetwork>(availablePtr, 0, 8)
-                    .Where(n => n.Auth == 7 && n.Cipher == 4 && n.Connectable != 0).Select(n => n.Ssid.Text).ToHashSet(); }
+                Dictionary<string, WifiSecurity> security;
+                try { security = ReadList<AvailableNetwork>(availablePtr, 0, 8)
+                    .GroupBy(n => n.Ssid.Text)
+                    .ToDictionary(g => g.Key, g => g.Select(n => WifiSecurityMapper.FromNative(n.Auth, n.Cipher, n.Connectable != 0))
+                        .OrderByDescending(s => s).First()); }
                 finally { WlanFreeMemory(availablePtr); }
                 Check(WlanGetNetworkBssList(handle, ref id, IntPtr.Zero, 3, false, IntPtr.Zero, out var bssPtr));
                 try
@@ -102,9 +106,10 @@ public sealed class WlanClient : IWifiClient, IDisposable
                     var count = Marshal.ReadInt32(bssPtr, 4);
                     if (count < 0 || 8L + (long)count * Marshal.SizeOf<BssEntry>() > total) throw new InvalidDataException();
                     foreach (var b in ReadList<BssEntry>(bssPtr, 4, 8))
-                        if (b.Ssid.Text == CandidateSelector.Ssid)
+                        if (CandidateSelector.IsLouisaSsid(b.Ssid.Text))
                             result.Add(new(id, b.Ssid.Text, Mac(b.Bssid), b.Rssi,
-                                b.BssType == 1 && (b.Capability & 16) != 0 && supported.Contains(b.Ssid.Text)));
+                                b.BssType == 1 && (b.Capability & 16) != 0
+                                    ? security.GetValueOrDefault(b.Ssid.Text) : WifiSecurity.Unsupported));
                 }
                 finally { WlanFreeMemory(bssPtr); }
             }
@@ -115,14 +120,15 @@ public sealed class WlanClient : IWifiClient, IDisposable
     public async Task<JoinResult> JoinAsync(AccessPoint target, string password, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
+        if (!target.Supported) return new(null, "此網路安全性不支援或 Windows 回報無法連線");
         if (Snapshot() is { } snapshot && (snapshot.Busy || snapshot.Connections.Count != 0))
             return new(null, "已有其他連線活動");
         var id = target.InterfaceId;
-        var profile = "LouisaWifi-" + Guid.NewGuid().ToString("N");
+        var profile = target.Ssid;
         var pending = new PendingConnection(id, profile);
-        void Completed(Guid adapter, uint code, string name, uint reason)
+        void Completed(Guid adapter, uint code, string name, uint reason, uint mode)
         {
-            pending.Accept(adapter, code, name, reason);
+            pending.Accept(adapter, code, name, reason, mode);
         }
         // DOT11_BSSID_LIST: NDIS_OBJECT_HEADER + two ULONGs + six-byte MAC (padded to 20).
         var bssids = Marshal.AllocHGlobal(20);
@@ -138,7 +144,7 @@ public sealed class WlanClient : IWifiClient, IDisposable
         var completed = false;
         try
         {
-            var parameters = new ConnectionParameters { Mode = 1, Profile = WifiProfileBuilder.Build(profile, target.Ssid, password), BssidList = bssids, BssType = 1 };
+            var parameters = new ConnectionParameters { Mode = 1, Profile = WifiProfileBuilder.Build(profile, target.Ssid, password, target.Security), BssidList = bssids, BssType = 1 };
             Check(WlanConnect(handle, ref id, ref parameters, IntPtr.Zero));
             requested = true;
             var reason = await pending.Completion.WaitAsync(TimeSpan.FromSeconds(25), token);
@@ -152,13 +158,14 @@ public sealed class WlanClient : IWifiClient, IDisposable
         catch (TimeoutException) { return new(null, "Wi-Fi 連線逾時"); }
         finally
         {
-            // Cancel only our own request; never disconnect a different completed profile.
-            if (requested && !completed && !pending.External)
+            // Names are shared with saved profiles. Preserve every established connection,
+            // including a manual connection to the same SSID; only cancel a pending attempt.
+            if (requested && !completed && pending.Started && !pending.External)
             {
                 try
                 {
                     var current = Current(id);
-                    if (current is null || current.Profile == profile) WlanDisconnect(handle, ref id, IntPtr.Zero);
+                    if (current is null && !pending.External) WlanDisconnect(handle, ref id, IntPtr.Zero);
                 }
                 catch { /* Preserve an unknown connection if ownership cannot be established. */ }
             }

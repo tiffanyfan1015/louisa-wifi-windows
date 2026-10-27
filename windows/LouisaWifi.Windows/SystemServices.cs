@@ -24,16 +24,21 @@ public sealed class LocationService : ILocationService
 
 public sealed class ConnectivityMonitor : IConnectivityMonitor
 {
-    public Task<string> CheckAsync(CancellationToken token)
+    public async Task<InternetStatus> CheckAsync(Connection connection, CancellationToken token)
     {
-        token.ThrowIfCancellationRequested();
-        // OS-wide assessment can include Ethernet or VPN; do not claim this proves Wi-Fi internet access.
-        var level = NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel();
-        return Task.FromResult(level switch {
-            NetworkConnectivityLevel.InternetAccess => "系統顯示網際網路可用",
-            NetworkConnectivityLevel.ConstrainedInternetAccess => "網路受限，可能需要網頁登入",
-            _ => "系統尚未確認網際網路可用"
-        });
+        // Wait up to 30 seconds for this Wi-Fi's IP/connectivity state, not Ethernet or VPN.
+        for (var attempt = 0; attempt <= 15; attempt++)
+        {
+            token.ThrowIfCancellationRequested();
+            var profile = NetworkInformation.GetConnectionProfiles().FirstOrDefault(p =>
+                p.IsWlanConnectionProfile && p.NetworkAdapter?.NetworkAdapterId == connection.InterfaceId
+                && p.WlanConnectionProfileDetails.GetConnectedSsid() == connection.Ssid);
+            var level = profile?.GetNetworkConnectivityLevel();
+            if (level == NetworkConnectivityLevel.InternetAccess) return InternetStatus.Available;
+            if (level == NetworkConnectivityLevel.ConstrainedInternetAccess) return InternetStatus.Limited;
+            if (attempt < 15) await Task.Delay(TimeSpan.FromSeconds(2), token);
+        }
+        return InternetStatus.Unconfirmed;
     }
 }
 

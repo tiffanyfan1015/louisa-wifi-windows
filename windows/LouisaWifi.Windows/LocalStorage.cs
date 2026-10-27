@@ -32,7 +32,6 @@ public static class LocalFiles
 public sealed class AppSettings
 {
     public bool AutoConnect { get; set; }
-    public bool Authorized { get; set; }
     public bool UseLocation { get; set; }
     public static AppSettings Load()
     {

@@ -12,7 +12,7 @@ void Expect(bool value, string message = "Assertion failed") { if (!value) throw
 Store Store(string name, params string[] passwords) => new(name, "台北市", "", 25, 121, passwords);
 var storeA = Store("A", "11111111", "22222222", "33333333");
 var storeB = Store("B", "44444444", "55555555");
-var ap = new AccessPoint(Guid.NewGuid(), CandidateSelector.Ssid, "aa:bb:cc:dd:ee:01", -40, true);
+var ap = new AccessPoint(Guid.NewGuid(), CandidateSelector.Ssid, "aa:bb:cc:dd:ee:01", -40, WifiSecurity.Wpa2Personal);
 StoreRepository Repository(params Store[] values) => new(new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(values)));
 (ConnectionCoordinator C, FakeWifi W, MemoryLearned L) Setup()
 {
@@ -46,6 +46,43 @@ Test("候選去重、限制次數且不處理其他 SSID", () => {
     var stores = Enumerable.Range(0, 20).Select(i => Store(i.ToString(), i.ToString("D8"))).ToArray();
     Expect(CandidateSelector.Select([ap], new MemoryLearned(), stores).Count == 9);
 });
+Test("路易莎名稱支援包含比對、大小寫與原始名稱，保留完整 SSID", () => {
+    foreach (var ssid in new[] { "LOUISA COFFEE2", "louisa coffee", "Store Louisa Coffee 5G", "LouisaCoffee", "louisacoffee2" })
+    {
+        var candidates = CandidateSelector.Select([ap with { Ssid = ssid }], new MemoryLearned(), [storeA]);
+        Expect(candidates.Count > 0 && candidates.All(c => c.Target.Ssid == ssid));
+    }
+    foreach (var ssid in new[] { "", "Other", "Louisa", "Coffee", "Louisa Tea" })
+        Expect(!CandidateSelector.IsLouisaSsid(ssid));
+    Expect(CandidateSelector.Select([ap with { Ssid = "LOUISA COFFEE2", Security = WifiSecurity.Unsupported }], new MemoryLearned(), [storeA]).Count == 0);
+});
+Test("連線 Profile 保留完整的路易莎變體名稱", () => {
+    const string ssid = "LOUISA COFFEE2";
+    var xml = XDocument.Parse(WifiProfileBuilder.Build("test", ssid, "12345678", WifiSecurity.Wpa2Personal));
+    XNamespace ns = "http://www.microsoft.com/networking/WLAN/profile/v1";
+    Expect(xml.Descendants(ns + "SSID").Single().Element(ns + "name")!.Value == ssid);
+    Expect(xml.Descendants(ns + "hex").Single().Value == Convert.ToHexString(Encoding.UTF8.GetBytes(ssid)));
+});
+AsyncTest("變體 SSID 可以連線、記錄並在下次自動連線使用", async () => {
+    var (c, w, l) = Setup(); w.Aps = [ap with { Ssid = "LOUISA COFFEE2" }];
+    w.OnJoin = (target, _, _) => Task.FromResult(new JoinResult(new(target.InterfaceId, target.Ssid, target.Bssid, "test"), ""));
+    await c.CheckAsync(true, storeA);
+    Expect(w.Joins == 1 && l.Find(ap.Bssid)?.StoreName == storeA.Name && c.Status.Contains("Wi-Fi 已連線"));
+    w.Connections = [];
+    await c.CheckAsync();
+    Expect(w.Joins == 2 && c.Status.Contains("Wi-Fi 已連線"));
+});
+AsyncTest("已連線的變體 SSID 顯示狀態且不重新掃描", async () => {
+    var (c, w, _) = Setup(); w.Connections = [new(ap.InterfaceId, "LOUISA COFFEE2", ap.Bssid, "test")];
+    await c.CheckAsync();
+    Expect(w.Scans == 0 && w.Joins == 0 && c.Status.Contains("LOUISA COFFEE2") && c.Status.Contains("可上網"));
+});
+AsyncTest("連上另一個符合名稱的 SSID 仍不記錄錯誤關聯", async () => {
+    var (c, w, l) = Setup(); w.Aps = [ap with { Ssid = "LOUISA COFFEE2" }];
+    w.OnJoin = (target, _, _) => Task.FromResult(new JoinResult(new(target.InterfaceId, "LOUISA COFFEE3", target.Bssid, "test"), ""));
+    await c.CheckAsync(true, storeA);
+    Expect(l.Records.Count == 0 && c.Status.Contains("未儲存"));
+});
 Test("距離排序排除未知與遠方座標", () => {
     var repo = Repository(storeA, storeB with { Lat = 0, Lng = 0 }, storeA with { Name = "遠方", Lat = 24 });
     Expect(repo.Nearby(new(25, 121, 50, DateTimeOffset.UtcNow)).Single().Name == "A");
@@ -53,10 +90,51 @@ Test("距離排序排除未知與遠方座標", () => {
 });
 Test("Profile XML 安全逸出密碼且為手動模式", () => {
     const string password = "a<&\"12345";
-    var xml = XDocument.Parse(WifiProfileBuilder.Build("test", CandidateSelector.Ssid, password));
+    var xml = XDocument.Parse(WifiProfileBuilder.Build("test", CandidateSelector.Ssid, password, WifiSecurity.Wpa2Personal));
     XNamespace ns = "http://www.microsoft.com/networking/WLAN/profile/v1";
     Expect(xml.Descendants(ns + "keyMaterial").Single().Value == password);
     Expect(xml.Descendants(ns + "connectionMode").Single().Value == "manual");
+});
+Test("Windows 驗證與加密代碼只接受可連線的 WPA2/WPA3 個人版 AES", () => {
+    Expect(WifiSecurityMapper.FromNative(7, 4, true) == WifiSecurity.Wpa2Personal);
+    Expect(WifiSecurityMapper.FromNative(9, 4, true) == WifiSecurity.Wpa3Personal);
+    foreach (var auth in new uint[] { 1, 3, 4, 6, 8, 10, 11, 99 })
+        Expect(WifiSecurityMapper.FromNative(auth, 4, true) == WifiSecurity.Unsupported);
+    foreach (var auth in new uint[] { 7, 9 })
+    {
+        Expect(WifiSecurityMapper.FromNative(auth, 2, true) == WifiSecurity.Unsupported);
+        Expect(WifiSecurityMapper.FromNative(auth, 4, false) == WifiSecurity.Unsupported);
+    }
+});
+Test("WPA2/WPA3 Profile 使用對應驗證、AES 並安全逸出密碼", () => {
+    XNamespace ns = "http://www.microsoft.com/networking/WLAN/profile/v1";
+    foreach (var (security, authentication) in new[] { (WifiSecurity.Wpa2Personal, "WPA2PSK"), (WifiSecurity.Wpa3Personal, "WPA3SAE") })
+    {
+        const string password = "test<&12345";
+        var xml = XDocument.Parse(WifiProfileBuilder.Build("test", "LOUISA COFFEE2", password, security));
+        Expect(xml.Descendants(ns + "authentication").Single().Value == authentication);
+        Expect(xml.Descendants(ns + "encryption").Single().Value == "AES");
+        Expect(xml.Descendants(ns + "useOneX").Single().Value == "false");
+        Expect(xml.Descendants(ns + "keyMaterial").Single().Value == password);
+        Expect(xml.Descendants(ns + "connectionMode").Single().Value == "manual");
+    }
+    var rejected = false;
+    try { WifiProfileBuilder.Build("test", "LOUISA COFFEE2", "12345678", WifiSecurity.Unsupported); }
+    catch (ArgumentException) { rejected = true; }
+    Expect(rejected);
+});
+AsyncTest("WPA3 安全性傳到連線目標且成功記錄可供自動連線", async () => {
+    var (c, w, l) = Setup(); w.Aps = [ap with { Ssid = "LOUISA COFFEE2", Security = WifiSecurity.Wpa3Personal }];
+    var securities = new List<WifiSecurity>();
+    w.OnJoin = (target, _, _) => {
+        securities.Add(target.Security);
+        return Task.FromResult(new JoinResult(new(target.InterfaceId, target.Ssid, target.Bssid, "test"), ""));
+    };
+    await c.CheckAsync(true, storeA);
+    Expect(l.Find(ap.Bssid)?.StoreName == storeA.Name && c.Status.Contains("Wi-Fi 已連線"));
+    w.Connections = [];
+    await c.CheckAsync();
+    Expect(securities.SequenceEqual(new[] { WifiSecurity.Wpa3Personal, WifiSecurity.Wpa3Personal }));
 });
 Test("Native 結構大小與欄位偏移符合 Windows ABI", () => {
     Expect(Marshal.SizeOf<WlanNative.Ssid>() == 36);
@@ -68,6 +146,9 @@ Test("Native 結構大小與欄位偏移符合 Windows ABI", () => {
 });
 AsyncTest("Native 中途失敗與過期事件不能提前結束本次連線", async () => {
     var pending = new PendingConnection(ap.InterfaceId, "unique-profile");
+    pending.Accept(ap.InterfaceId, 10, "unique-profile", 0);
+    Expect(!pending.Completion.IsCompleted);
+    pending.Accept(ap.InterfaceId, 9, "unique-profile", 0);
     pending.Accept(ap.InterfaceId, 11, "unique-profile", 123);
     pending.Accept(ap.InterfaceId, 10, "old-profile", 0);
     pending.Accept(Guid.NewGuid(), 10, "unique-profile", 0);
@@ -78,6 +159,19 @@ AsyncTest("Native 中途失敗與過期事件不能提前結束本次連線", as
 AsyncTest("Native 外部連線開始時停止本次操作", async () => {
     var pending = new PendingConnection(ap.InterfaceId, "unique-profile");
     pending.Accept(ap.InterfaceId, 9, "user-profile", 0);
+    Expect(await pending.Completion == uint.MaxValue && pending.External);
+});
+AsyncTest("相同名稱的已儲存設定由使用者連線時仍停止本次操作", async () => {
+    var pending = new PendingConnection(ap.InterfaceId, "LOUISA COFFEE2");
+    pending.Accept(ap.InterfaceId, 9, "LOUISA COFFEE2", 0, 1);
+    pending.Accept(ap.InterfaceId, 9, "LOUISA COFFEE2", 0, 0);
+    pending.Accept(ap.InterfaceId, 10, "LOUISA COFFEE2", 0, 1);
+    Expect(await pending.Completion == uint.MaxValue && pending.External);
+});
+AsyncTest("相同暫時設定的第二次連線開始不視為原本請求", async () => {
+    var pending = new PendingConnection(ap.InterfaceId, "LOUISA COFFEE2");
+    pending.Accept(ap.InterfaceId, 9, "LOUISA COFFEE2", 0);
+    pending.Accept(ap.InterfaceId, 9, "LOUISA COFFEE2", 0);
     Expect(await pending.Completion == uint.MaxValue && pending.External);
 });
 AsyncTest("已有 Wi-Fi 時，自動和手動皆不掃描或連線", async () => {
@@ -97,7 +191,7 @@ AsyncTest("只記錄成功 BSSID，不記附近其他基地台", async () => {
     w.OnJoin = (target, _, _) => Task.FromResult(new JoinResult(new(target.InterfaceId, target.Ssid, target.Bssid, "test"), ""));
     await c.CheckAsync(true, storeA);
     Expect(l.Records.Count == 1 && l.Find(ap.Bssid) is not null);
-    Expect(c.Status.Contains("Wi-Fi 已連線") && c.Status.Contains("測試網路狀態"));
+    Expect(c.Status.Contains("Wi-Fi 已連線") && c.Status.Contains("可上網"));
 });
 AsyncTest("實際基地台不同時，不記住錯誤關聯", async () => {
     var (c, w, l) = Setup();
@@ -159,6 +253,61 @@ AsyncTest("未知 BSSID 不採用過期或精度不足的位置", async () => {
         Expect(wifi.Joins == 0 && c.Status.Contains("手動選店"));
     }
 });
+AsyncTest("首次及既有連線都等上網確認完成才顯示已連線", async () => {
+    foreach (var existing in new[] { false, true })
+    {
+        var wifi = new FakeWifi(ap);
+        var connection = new Connection(ap.InterfaceId, ap.Ssid, ap.Bssid, "test");
+        if (existing) wifi.Connections = [connection];
+        wifi.OnJoin = (_, _, _) => Task.FromResult(new JoinResult(connection, ""));
+        var ready = new TaskCompletionSource<InternetStatus>();
+        var monitor = new FakeConnectivity { OnCheck = (target, token) => {
+            Expect(target == connection);
+            return ready.Task.WaitAsync(token);
+        } };
+        var c = new ConnectionCoordinator(wifi, new MemoryLearned(), Repository(storeA), new FakeLocation(), monitor);
+        var messages = new List<string>(); c.StatusChanged += messages.Add;
+        var run = c.CheckAsync(true, storeA);
+        Expect(!run.IsCompleted && c.Status.StartsWith("正在連線") && messages.All(m => !m.Contains("已連線")));
+        ready.SetResult(InternetStatus.Available);
+        await run;
+        Expect(c.Status.Contains("已連線") && c.Status.Contains("可上網"));
+    }
+});
+AsyncTest("受限或未確認可上網不顯示連線成功", async () => {
+    foreach (var result in new[] { InternetStatus.Unconfirmed, InternetStatus.Limited })
+    {
+        var wifi = new FakeWifi(ap) { Connections = [new(ap.InterfaceId, ap.Ssid, ap.Bssid, "test")] };
+        var monitor = new FakeConnectivity { OnCheck = (_, _) => Task.FromResult(result) };
+        var c = new ConnectionCoordinator(wifi, new MemoryLearned(), Repository(storeA), new FakeLocation(), monitor);
+        await c.CheckAsync(true);
+        Expect(!c.Status.Contains("已連線"));
+        Expect(c.Status.Contains(result == InternetStatus.Limited ? "網路受限" : "尚未確認"));
+        Expect(wifi.Joins == 0);
+    }
+});
+AsyncTest("確認上網時切換網路不沿用成功結果", async () => {
+    var wifi = new FakeWifi(ap) { Connections = [new(ap.InterfaceId, ap.Ssid, ap.Bssid, "test")] };
+    var monitor = new FakeConnectivity { OnCheck = (_, _) => {
+        wifi.Connections = [new(ap.InterfaceId, "Other", "other", "other")];
+        return Task.FromResult(InternetStatus.Available);
+    } };
+    var c = new ConnectionCoordinator(wifi, new MemoryLearned(), Repository(storeA), new FakeLocation(), monitor);
+    await c.CheckAsync(true);
+    Expect(c.Status.Contains("已切換") && !c.Status.Contains("已連線"));
+});
+AsyncTest("等待上網確認可以取消且不顯示成功", async () => {
+    var wifi = new FakeWifi(ap) { Connections = [new(ap.InterfaceId, ap.Ssid, ap.Bssid, "test")] };
+    var monitor = new FakeConnectivity { OnCheck = async (_, token) => {
+        await Task.Delay(Timeout.Infinite, token);
+        return InternetStatus.Available;
+    } };
+    var c = new ConnectionCoordinator(wifi, new MemoryLearned(), Repository(storeA), new FakeLocation(), monitor);
+    c.SetEnabled(true);
+    var run = c.CheckAsync(true);
+    c.Cancel(); await run;
+    Expect(c.Status.Contains("已取消") && wifi.Connections.Count == 1);
+});
 Test("DPAPI 記錄重載成功、磁碟不含明文、損壞資料不覆寫", () => {
     var dir = Path.Combine(AppContext.BaseDirectory, "test-data", Guid.NewGuid().ToString("N"));
     var data = new LearnedNetworkStore(dir); data.Remember(ap.Bssid, new("A", "secret88"));
@@ -205,7 +354,9 @@ sealed class FakeLocation : ILocationService
 }
 sealed class FakeConnectivity : IConnectivityMonitor
 {
-    public Task<string> CheckAsync(CancellationToken token) => Task.FromResult("測試網路狀態");
+    public Func<Connection, CancellationToken, Task<InternetStatus>>? OnCheck;
+    public Task<InternetStatus> CheckAsync(Connection connection, CancellationToken token) =>
+        OnCheck?.Invoke(connection, token) ?? Task.FromResult(InternetStatus.Available);
 }
 sealed class FakeWifi(AccessPoint ap) : IWifiClient
 {
@@ -219,6 +370,11 @@ sealed class FakeWifi(AccessPoint ap) : IWifiClient
     public WifiSnapshot Snapshot() => new(true, Busy, Connections);
     public Task<IReadOnlyList<AccessPoint>> ScanAsync(CancellationToken token)
     { Scans++; if (ScanError is not null) throw ScanError; return Task.FromResult(Aps); }
-    public Task<JoinResult> JoinAsync(AccessPoint target, string password, CancellationToken token)
-    { Joins++; return OnJoin?.Invoke(target, password, token) ?? Task.FromResult(new JoinResult(null, "驗證失敗")); }
+    public async Task<JoinResult> JoinAsync(AccessPoint target, string password, CancellationToken token)
+    {
+        Joins++;
+        var result = OnJoin is null ? new JoinResult(null, "驗證失敗") : await OnJoin(target, password, token);
+        if (result.Connection is { } connection) Connections = [connection];
+        return result;
+    }
 }
